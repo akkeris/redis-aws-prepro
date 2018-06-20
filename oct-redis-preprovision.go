@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
+	"log"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/elasticache"
@@ -11,36 +11,64 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"errors"
 )
 
-func provision(plan string) string {
+func provision(plan string) (error, string) {
+	small_parameter_group := os.Getenv("SMALL_PARAMETER_GROUP")
+	medium_parameter_group := os.Getenv("MEDIUM_PARAMETER_GROUP")
+	large_parameter_group := os.Getenv("LARGE_PARAMETER_GROUP")
+	aws_region := os.Getenv("AWS_REGION")
+	engine_version := os.Getenv("ENGINE_VERSION")
+	subnet_group := os.Getenv("SUBNET_GROUP")
 
-	cacheparametergroupname := "redis-32-small"
+	if small_parameter_group == "" {
+		small_parameter_group = "redis-32-small"
+	}
+	if medium_parameter_group == "" {
+		medium_parameter_group = "redis-32-medium"
+	}
+	if large_parameter_group == "" {
+		large_parameter_group = "redis-32-large"
+	}
+	if aws_region == "" {
+		aws_region = "us-west-2"
+	}
+	if engine_version == "" {
+		engine_version = "3.2.10"
+	}
+	if subnet_group == "" {
+		subnet_group = "redis-subnet-group"
+	}
+
+	cacheparametergroupname := small_parameter_group
 	cachenodetype := os.Getenv("SMALL_INSTANCE_TYPE")
 	numcachenodes := int64(1)
 	billingcode := "pre-provisioned"
 	u, err := uuid.NewV4()
+	if err != nil {
+		return err, ""
+	}
 	name := os.Getenv("NAME_PREFIX") + "-" + strings.Split(u.String(), "-")[0]
-	fmt.Println(name)
 
 	if plan == "small" {
-		cacheparametergroupname = "redis-32-small"
+		cacheparametergroupname = small_parameter_group
 		cachenodetype = os.Getenv("SMALL_INSTANCE_TYPE")
 		numcachenodes = int64(1)
-	}
-	if plan == "medium" {
-		cacheparametergroupname = "redis-32-medium"
+	} else if plan == "medium" {
+		cacheparametergroupname = medium_parameter_group
 		cachenodetype = os.Getenv("MEDIUM_INSTANCE_TYPE")
 		numcachenodes = int64(1)
-	}
-	if plan == "large" {
-		cacheparametergroupname = "redis-32-large"
+	} else if plan == "large" {
+		cacheparametergroupname = large_parameter_group
 		cachenodetype = os.Getenv("LARGE_INSTANCE_TYPE")
 		numcachenodes = int64(1)
+	} else {
+		return errors.New("Invalid plan specified: " + plan), ""
 	}
 
 	svc := elasticache.New(session.New(&aws.Config{
-		Region: aws.String("us-west-2"),
+		Region: aws.String(aws_region),
 	}))
 
 	params := &elasticache.CreateCacheClusterInput{
@@ -48,8 +76,9 @@ func provision(plan string) string {
 		AutoMinorVersionUpgrade: aws.Bool(true),
 		CacheNodeType:           aws.String(cachenodetype),
 		CacheParameterGroupName: aws.String(cacheparametergroupname),
-		CacheSubnetGroupName:    aws.String("redis-subnet-group"),
+		CacheSubnetGroupName:    aws.String(subnet_group),
 		Engine:                  aws.String("redis"),
+		EngineVersion:					 aws.String(engine_version),
 		NumCacheNodes:           aws.Int64(numcachenodes),
 		Port:                    aws.Int64(6379),
 		SecurityGroupIds: []*string{
@@ -66,42 +95,32 @@ func provision(plan string) string {
 			},
 		},
 	}
-	resp, err := svc.CreateCacheCluster(params)
-
+	_, err = svc.CreateCacheCluster(params)
 	if err != nil {
-		fmt.Println(err.Error())
-		return err.Error()
+		return err, ""
 	}
-
-	fmt.Println(resp)
-	return name
+	return nil, name
 }
 
 func insertnew(name string, plan string, claimed string) {
 	uri := os.Getenv("BROKER_DB")
 	db, err := sql.Open("postgres", uri)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatalln(err)
 	}
 	var newname string
 	err = db.QueryRow("INSERT INTO provision(name,plan,claimed) VALUES($1,$2,$3) returning name;", name, plan, claimed).Scan(&newname)
-
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatalln(err)
 	}
-	fmt.Println(newname)
 	err = db.Close()
 }
 
 func main() {
-
 	uri := os.Getenv("BROKER_DB")
 	db, err := sql.Open("postgres", uri)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatalln(err)
 	}
 
 	newname := "new"
@@ -111,44 +130,43 @@ func main() {
 	var smallcount int
 	err = db.QueryRow("SELECT count(*) as smallcount from provision where plan='small' and claimed='no'").Scan(&smallcount)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatalln(err)
 	}
-	fmt.Println(smallcount)
 
 	if smallcount < provisionsmall {
-		newname = provision("small")
-		fmt.Println(newname)
+		err, newname = provision("small")
+		if err != nil {
+			log.Fatalln(err)
+		}
 		insertnew(newname, "small", "no")
 	}
 
 	var mediumcount int
 	err = db.QueryRow("SELECT count(*) as mediumcount from provision where plan='medium' and claimed='no'").Scan(&mediumcount)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatalln(err)
 	}
-	fmt.Println(mediumcount)
 
 	if mediumcount < provisionmedium {
-		newname = provision("medium")
-		fmt.Println(newname)
+		err, newname = provision("medium")
+		if err != nil {
+			log.Fatalln(err)
+		}
 		insertnew(newname, "medium", "no")
 	}
 
 	var largecount int
 	err = db.QueryRow("SELECT count(*) as largecount from provision where plan='large' and claimed='no'").Scan(&largecount)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatalln(err)
 	}
-	fmt.Println(largecount)
 
 	if largecount < provisionlarge {
-		newname = provision("large")
-		fmt.Println(newname)
+		err, newname = provision("large")
+		if err != nil {
+			log.Fatalln(err)
+		}
 		insertnew(newname, "large", "no")
 	}
 	err = db.Close()
-
 }

@@ -33,5 +33,11 @@ aws creds
 4. MEDIUM_INSTANCE_TYPE
 5. ELASTICACHE_SECURITY_GROUP
           
+### Optional Environment Variables
 
-
+1. SMALL_PARAMETER_GROUP (defaults to redis-32-small)
+2. MEDIUM_PARAMETER_GROUP (defaults to redis-32-medium)
+3. LARGE_PARAMETER_GROUP (defaults to redis-32-large)
+4. AWS_REGION (defaults to us-west-2)
+5. ENGINE_VERSION (defaults to 3.2.10)
+6. SUBNET_GROUP (defaults to redis-subnet-group)
