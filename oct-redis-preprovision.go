@@ -2,16 +2,16 @@ package main
 
 import (
 	"database/sql"
-	"log"
+	"errors"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/elasticache"
 	_ "github.com/lib/pq"
 	"github.com/nu7hatch/gouuid"
+	"log"
 	"os"
 	"strconv"
 	"strings"
-	"errors"
 )
 
 func provision(plan string) (error, string) {
@@ -78,7 +78,7 @@ func provision(plan string) (error, string) {
 		CacheParameterGroupName: aws.String(cacheparametergroupname),
 		CacheSubnetGroupName:    aws.String(subnet_group),
 		Engine:                  aws.String("redis"),
-		EngineVersion:					 aws.String(engine_version),
+		EngineVersion:           aws.String(engine_version),
 		NumCacheNodes:           aws.Int64(numcachenodes),
 		Port:                    aws.Int64(6379),
 		SecurityGroupIds: []*string{
