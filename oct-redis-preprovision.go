@@ -125,14 +125,14 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
+	defer db.Close()
 	//create database if it doesn't exist
 	buf, err := ioutil.ReadFile("create.sql")
 	if err != nil {
 		fmt.Println("Error: Unable to run migration scripts, oculd not load create.sql.")
 		os.Exit(1)
 	}
-	_, err = db.Query(string(buf))
+	_, err = db.Exec(string(buf))
 	if err != nil {
 		fmt.Println(err)
 		fmt.Println("Error: Unable to run migration scripts, execution failed.")
